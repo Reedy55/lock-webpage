@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lock Control</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; padding: 2rem; }
+    button { font-size: 1.2rem; padding: 0.5rem 1rem; margin: 1rem; }
+    input { font-size: 1.2rem; padding: 0.3rem; width: 6rem; text-align: center; }
+    #status { margin-top: 1rem; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>Bluetooth Lock Control</h1>
+  <button id="connectBtn">Connect to Lock</button>
+  <br/>
+  <input id="codeInput" type="text" maxlength="10" placeholder="Enter Code" disabled />
+  <button id="sendBtn" disabled>Send Code</button>
+  <div id="status">Not connected</div>
+
+  <script>
+    let bluetoothDevice;
+    let uartService;
+    let txCharacteristic;
+
+    const UART_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+    const UART_TX_CHAR_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // TX from client -> device
+
+    const connectBtn = document.getElementById('connectBtn');
+    const sendBtn = document.getElementById('sendBtn');
+    const codeInput = document.getElementById('codeInput');
+    const statusDiv = document.getElementById('status');
+
+    connectBtn.addEventListener('click', async () => {
+      statusDiv.textContent = 'Requesting Bluetooth Device...';
+      try {
+        bluetoothDevice = await navigator.bluetooth.requestDevice({
+          filters: [{ namePrefix: 'HMSoft' }], // HM-10 default name prefix
+          optionalServices: [UART_SERVICE_UUID]
+        });
+        bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+        const server = await bluetoothDevice.gatt.connect();
+        uartService = await server.getPrimaryService(UART_SERVICE_UUID);
+        txCharacteristic = await uartService.getCharacteristic(UART_TX_CHAR_UUID);
+
+        statusDiv.textContent = `Connected to ${bluetoothDevice.name}`;
+        codeInput.disabled = false;
+        sendBtn.disabled = false;
+      } catch (error) {
+        statusDiv.textContent = 'Connection failed: ' + error;
+      }
+    });
+
+    sendBtn.addEventListener('click', async () => {
+      const code = codeInput.value.trim();
+      if (!code) {
+        alert('Please enter a code!');
+        return;
+      }
+      if (!txCharacteristic) {
+        alert('Not connected!');
+        return;
+      }
+      try {
+        // Send code with newline as Arduino expects newline-terminated strings
+        const encoder = new TextEncoder();
+        await txCharacteristic.writeValue(encoder.encode(code + '\n'));
+        statusDiv.textContent = 'Sent code: ' + code;
+      } catch (error) {
+        statusDiv.textContent = 'Send failed: ' + error;
+      }
+    });
+
+    function onDisconnected() {
+      statusDiv.textContent = 'Disconnected';
+      codeInput.disabled = true;
+      sendBtn.disabled = true;
+    }
+  </script>
+</body>
+</html>
